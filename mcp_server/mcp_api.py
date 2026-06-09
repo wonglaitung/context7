@@ -77,4 +77,4 @@ def get_manual_chapter(file_path: str) -> str:
         return f"拉取全文失败: {str(e)}"
 
 if __name__ == "__main__":
-    mcp.run(transport="sse", port=8500)
+    mcp.run(transport="http", host="0.0.0.0", port=8500)
