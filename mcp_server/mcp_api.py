@@ -2,13 +2,26 @@ import os
 from datetime import datetime
 from mcp.server.fastmcp import FastMCP
 import chromadb
+from chromadb.utils.embedding_functions import EmbeddingFunction
+from sentence_transformers import SentenceTransformer
 
 mcp = FastMCP("Internal-Tech-Manual-API")
 
 CHROMA_HOST = os.getenv("CHROMA_HOST", "127.0.0.1")
 chroma_client = chromadb.HttpClient(host=CHROMA_HOST, port=8000)
 
-col_chunks = chroma_client.get_collection(name="internal_tech_chunks")
+# 使用与同步脚本相同的 embedding function
+class LocalEmbeddingFunction(EmbeddingFunction):
+    def __init__(self):
+        # 容器内路径
+        model_path = os.getenv("MODEL_PATH", "/app/models")
+        self.model = SentenceTransformer(model_path, device="cpu")
+    def __call__(self, input: chromadb.Documents) -> chromadb.Embeddings:
+        return self.model.encode(input, normalize_embeddings=True).tolist()
+
+embedding_func = LocalEmbeddingFunction()
+
+col_chunks = chroma_client.get_collection(name="internal_tech_chunks", embedding_function=embedding_func)
 col_full = chroma_client.get_collection(name="internal_full_docs")
 
 # 接口一：模糊语义搜索

@@ -2,8 +2,10 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# 一次性安装所有格式解析所需的库（内网环境可指定私有源）
-RUN pip install --no-cache-dir sentence-transformers chromadb python-docx pdfplumber
+# 先安装 PyTorch CPU 版本，再用 --no-deps 安装 sentence-transformers 防止重装 torch
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir sentence-transformers --no-deps && \
+    pip install --no-cache-dir chromadb python-docx pdfplumber transformers huggingface-hub
 
 COPY container_sync.py /app/container_sync.py
 
