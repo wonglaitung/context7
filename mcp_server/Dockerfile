@@ -6,7 +6,7 @@ WORKDIR /app
 # transformers>=4.41 需要 PyTorch>=2.2 支持 float8 类型
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir sentence-transformers --no-deps && \
-    pip install --no-cache-dir mcp[cli] chromadb scikit-learn && \
+    pip install --no-cache-dir mcp[cli] chromadb scikit-learn uvicorn && \
     pip install --no-cache-dir "transformers>=4.41,<4.50" huggingface-hub
 
 COPY mcp_api.py /app/mcp_api.py

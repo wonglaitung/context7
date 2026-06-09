@@ -22,7 +22,7 @@ class LocalEmbeddingFunction(EmbeddingFunction):
 embedding_func = LocalEmbeddingFunction()
 
 col_chunks = chroma_client.get_collection(name="internal_tech_chunks", embedding_function=embedding_func)
-col_full = chroma_client.get_collection(name="internal_full_docs")
+col_full = chroma_client.get_collection(name="internal_full_docs", embedding_function=embedding_func)
 
 # 接口一：模糊语义搜索
 @mcp.tool()
@@ -77,4 +77,5 @@ def get_manual_chapter(file_path: str) -> str:
         return f"拉取全文失败: {str(e)}"
 
 if __name__ == "__main__":
-    mcp.run(transport="http", host="0.0.0.0", port=8500)
+    import uvicorn
+    uvicorn.run(mcp.sse_app(), host="0.0.0.0", port=8500)

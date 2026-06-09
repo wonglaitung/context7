@@ -53,11 +53,13 @@
 ### 1️⃣ 存储层：拉起独立 ChromaDB 数据库容器
 
 ```bash
+# 创建专用网络（容器间通过容器名互访）
+docker network create context7-net
+
 docker run -d \
   --name internal-chromadb \
   --restart always \
-  --cpus="4" \
-  --memory="4g" \
+  --network context7-net \
   -p 8000:8000 \
   -v /data/context7/chroma_data:/chroma/chroma \
   chromadb/chroma:latest
@@ -293,11 +295,17 @@ def main():
             import time
             time.sleep(5)
 
+    # 集合一：切片库（语义搜索）
+    embedding_func = ContainerEmbeddingFunction()
     col_chunks = client.get_or_create_collection(
         "internal_tech_chunks",
-        embedding_function=ContainerEmbeddingFunction()
+        embedding_function=embedding_func
     )
-    col_full = client.get_or_create_collection("internal_full_docs")
+    # 集合二：全文库（精准读取）
+    col_full = client.get_or_create_collection(
+        "internal_full_docs",
+        embedding_function=embedding_func  # 使用相同的 embedding 函数
+    )
 
     stats = {'total': 0, 'updated': 0, 'skipped': 0, 'failed': 0}
 
@@ -455,7 +463,7 @@ class LocalEmbeddingFunction(EmbeddingFunction):
 embedding_func = LocalEmbeddingFunction()
 
 col_chunks = chroma_client.get_collection(name="internal_tech_chunks", embedding_function=embedding_func)
-col_full = chroma_client.get_collection(name="internal_full_docs")
+col_full = chroma_client.get_collection(name="internal_full_docs", embedding_function=embedding_func)
 
 # 接口一：模糊语义搜索
 @mcp.tool()
@@ -511,7 +519,8 @@ def get_manual_chapter(file_path: str) -> str:
         return f"拉取全文失败: {str(e)}"
 
 if __name__ == "__main__":
-    mcp.run(transport="sse", port=8500)
+    import uvicorn
+    uvicorn.run(mcp.sse_app(), host="0.0.0.0", port=8500)
 
 ```
 
@@ -525,7 +534,7 @@ WORKDIR /app
 # 先安装 PyTorch CPU 版本，再用 --no-deps 安装 sentence-transformers 防止重装 torch
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir sentence-transformers --no-deps && \
-    pip install --no-cache-dir mcp[cli] chromadb transformers huggingface-hub
+    pip install --no-cache-dir mcp[cli] chromadb uvicorn transformers huggingface-hub
 
 COPY mcp_api.py /app/mcp_api.py
 
@@ -549,14 +558,18 @@ docker build -t mcp-server:latest .
 docker run -d \
   --name mcp-api-service \
   --restart always \
-  --network host \
+  --network context7-net \
+  -p 8500:8500 \
   --cpus="2" \
   --memory="2g" \
   -v /data/context7/models/bge-small-zh-v1.5:/app/models \
   -e MODEL_PATH="/app/models" \
+  -e CHROMA_HOST="internal-chromadb" \
   mcp-server:latest
 
 ```
+
+> **说明**：两个容器加入同一 Docker 网络 `context7-net`，MCP 服务通过容器名 `internal-chromadb` 连接 ChromaDB，IP 变化不影响连接。
 
 ---
 

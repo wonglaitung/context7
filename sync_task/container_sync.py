@@ -288,12 +288,16 @@ def main():
             time.sleep(5)
 
     # 集合一：切片库（语义搜索）
+    embedding_func = ContainerEmbeddingFunction()
     col_chunks = client.get_or_create_collection(
         "internal_tech_chunks",
-        embedding_function=ContainerEmbeddingFunction()
+        embedding_function=embedding_func
     )
     # 集合二：全文库（精准读取）
-    col_full = client.get_or_create_collection("internal_full_docs")
+    col_full = client.get_or_create_collection(
+        "internal_full_docs",
+        embedding_function=embedding_func  # 使用相同的 embedding 函数
+    )
 
     print(f"[{datetime.now()}] 开始扫描手册目录进行全格式解析...")
 
