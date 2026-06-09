@@ -396,7 +396,10 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir sentence-transformers chromadb python-docx pdfplumber
+# 先安装 PyTorch CPU 版本，再用 --no-deps 安装 sentence-transformers 防止重装 torch
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir sentence-transformers --no-deps && \
+    pip install --no-cache-dir chromadb python-docx pdfplumber transformers huggingface-hub
 
 COPY container_sync.py /app/container_sync.py
 
@@ -408,14 +411,14 @@ ENTRYPOINT ["python", "/app/container_sync.py"]
 
 ```bash
 cd /data/context7/sync_task
-docker build -t internal-mcp-syncer:1.0 .
+docker build -t sync-task:latest .
 
 ```
 
-#### 📅 宿主机 Crontab 配置
+#### 宿主机 Crontab 配置
 
 ```text
-0 2 * * * docker run --rm --name tmp-mcp-syncer --network host -v /data/context7/models/bge-small-zh-v1.5:/app/models -v /data/context7/manuals:/app/manuals -e CHROMA_HOST="127.0.0.1" internal-mcp-syncer:1.0 >> /data/context7/sync_task/cron_run.log 2>&1
+0 2 * * * docker run --rm --name tmp-mcp-syncer --network host -v /data/context7/models/bge-small-zh-v1.5:/app/models -v /data/context7/manuals:/app/manuals -e CHROMA_HOST="127.0.0.1" sync-task:latest >> /data/context7/sync_task/cron_run.log 2>&1
 
 ```
 
@@ -432,13 +435,26 @@ import os
 from datetime import datetime
 from mcp.server.fastmcp import FastMCP
 import chromadb
+from chromadb.utils.embedding_functions import EmbeddingFunction
+from sentence_transformers import SentenceTransformer
 
 mcp = FastMCP("Internal-Tech-Manual-API")
 
 CHROMA_HOST = os.getenv("CHROMA_HOST", "127.0.0.1")
 chroma_client = chromadb.HttpClient(host=CHROMA_HOST, port=8000)
 
-col_chunks = chroma_client.get_collection(name="internal_tech_chunks")
+# 使用与同步脚本相同的 embedding function
+class LocalEmbeddingFunction(EmbeddingFunction):
+    def __init__(self):
+        # 容器内路径
+        model_path = os.getenv("MODEL_PATH", "/app/models")
+        self.model = SentenceTransformer(model_path, device="cpu")
+    def __call__(self, input: chromadb.Documents) -> chromadb.Embeddings:
+        return self.model.encode(input, normalize_embeddings=True).tolist()
+
+embedding_func = LocalEmbeddingFunction()
+
+col_chunks = chroma_client.get_collection(name="internal_tech_chunks", embedding_function=embedding_func)
 col_full = chroma_client.get_collection(name="internal_full_docs")
 
 # 接口一：模糊语义搜索
@@ -506,7 +522,10 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir mcp[cli] chromadb
+# 先安装 PyTorch CPU 版本，再用 --no-deps 安装 sentence-transformers 防止重装 torch
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir sentence-transformers --no-deps && \
+    pip install --no-cache-dir mcp[cli] chromadb transformers huggingface-hub
 
 COPY mcp_api.py /app/mcp_api.py
 
@@ -520,7 +539,7 @@ ENTRYPOINT ["python", "/app/mcp_api.py"]
 
 ```bash
 cd /data/context7/mcp_server
-docker build -t internal-mcp-api:1.0 .
+docker build -t mcp-server:latest .
 
 ```
 
@@ -533,7 +552,9 @@ docker run -d \
   --network host \
   --cpus="2" \
   --memory="2g" \
-  internal-mcp-api:1.0
+  -v /data/context7/models/bge-small-zh-v1.5:/app/models \
+  -e MODEL_PATH="/app/models" \
+  mcp-server:latest
 
 ```
 
@@ -560,8 +581,10 @@ claude mcp add internal-docs -- http://10.x.x.x:8500/sse
 
 | 镜像 | 大小 | 说明 |
 |------|------|------|
-| `internal-mcp-syncer:1.0` | ~5.68GB | 包含 sentence-transformers + 模型 |
-| `internal-mcp-api:1.0` | ~575MB | 仅包含 mcp + chromadb 客户端 |
+| `sync-task:latest` | ~1.41GB | 包含 sentence-transformers + PyTorch CPU 版本 |
+| `mcp-server:latest` | ~1.36GB | 包含 mcp + chromadb + sentence-transformers (用于本地 embedding 计算) |
+
+**注意：** 使用 PyTorch CPU 版本显著减小了镜像体积（相比 CUDA 版本约 5GB+）。
 
 ---
 
