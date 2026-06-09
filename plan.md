@@ -584,9 +584,10 @@ docker run -d \
 
 **Claude Code 接入配置：**
 ```bash
-claude mcp add internal-docs -- http://10.x.x.x:8500/sse
-
+claude mcp add --transport sse internal-docs -- http://10.x.x.x:8500/sse
 ```
+
+> **说明**：SSE transport 需要指定 `/sse` 端点路径。
 
 ---
 
