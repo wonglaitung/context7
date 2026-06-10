@@ -28,8 +28,24 @@ col_full = chroma_client.get_collection(name="internal_full_docs", embedding_fun
 @mcp.tool()
 def search_tech_manual(query: str) -> str:
     """
-    当需要查询公司内部各系统架构规范、API 指南、安全守则、大模型风控或升级文档时使用此工具。
-    返回最匹配且版本最新的技术手册片段，并包含可用于追溯全文的文件路径 [file_path]。
+    搜索公司内部技术手册（语义匹配）。
+
+    当用户询问"技术规范"、"架构文档"、"API指南"、"安全守则"、"开发手册"、
+    "升级文档"、"操作指南"或需要查询内部技术资料时调用此工具。
+
+    参数说明：
+    | 参数 | 类型 | 必需 | 说明 |
+    |------|------|------|------|
+    | query | str | 是 | 自然语言查询，支持模糊语义匹配 |
+
+    返回内容：
+    - 最多返回 3 条最相关的技术手册片段
+    - 每条包含：file_path（文件路径）、chunk_title（章节标题）、last_updated（更新时间）、content（正文片段）
+    - 结果按更新时间倒序排列，优先展示最新文档
+
+    使用建议：
+    - 获取片段后，如需完整内容，请使用 get_manual_chapter() 获取全文
+    - 查询词可以是具体技术问题，系统会自动匹配语义相关内容
     """
     results = col_chunks.query(query_texts=[query], n_results=5)
     if not results['documents'] or len(results['documents'][0]) == 0:
@@ -60,7 +76,28 @@ def search_tech_manual(query: str) -> str:
 @mcp.tool()
 def get_manual_chapter(file_path: str) -> str:
     """
-    当调用 search_tech_manual 锁定了具体的 [file_path] 后，如果发现切片信息不全，需要进一步阅读该文件/章节的完整技术细节或全部代码示例时使用。
+    获取指定技术手册的完整全文内容。
+
+    当用户需要查看某个文档的完整内容、获取完整代码示例、或 search_tech_manual()
+    返回的片段信息不足时调用此工具。
+
+    参数说明：
+    | 参数 | 类型 | 必需 | 说明 |
+    |------|------|------|------|
+    | file_path | str | 是 | 文件路径，来自 search_tech_manual() 返回的 [file_path] 字段 |
+
+    返回内容：
+    - 指定文件的完整正文内容
+    - 包含：文件名、最后更新时间、MD5 校验码（前8位）
+    - 支持格式：.md（Markdown）、.docx（Word）、.pdf、.py/.java/.go/.sql/.sh（代码）
+
+    使用建议：
+    - 通常先调用 search_tech_manual() 定位文件，再调用此工具获取全文
+    - 如不确定 file_path，可先用模糊搜索关键词查询
+
+    不应调用此工具的情况：
+    - 不知道具体文件名 → 应先调用 search_tech_manual() 搜索
+    - 只需要片段信息 → 直接使用 search_tech_manual() 的返回即可
     """
     try:
         result = col_full.get(ids=[file_path])
